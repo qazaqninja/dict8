@@ -3,7 +3,10 @@ import Cocoa
 class StatusBarController {
     private var statusItem: NSStatusItem!
     private var menu: NSMenu!
-    private var permissionMenuItem: NSMenuItem?
+    private var micPermissionItem: NSMenuItem?
+    private var speechPermissionItem: NSMenuItem?
+    private var accessibilityPermissionItem: NSMenuItem?
+    private var settingsItem: NSMenuItem?
 
     var onQuit: (() -> Void)?
 
@@ -31,9 +34,21 @@ class StatusBarController {
 
         menu.addItem(NSMenuItem.separator())
 
-        permissionMenuItem = NSMenuItem(title: "Permissions: Checking...", action: nil, keyEquivalent: "")
-        permissionMenuItem?.isEnabled = false
-        menu.addItem(permissionMenuItem!)
+        micPermissionItem = NSMenuItem(title: "  Microphone: Checking…", action: nil, keyEquivalent: "")
+        micPermissionItem?.isEnabled = false
+        menu.addItem(micPermissionItem!)
+
+        speechPermissionItem = NSMenuItem(title: "  Speech Recognition: Checking…", action: nil, keyEquivalent: "")
+        speechPermissionItem?.isEnabled = false
+        menu.addItem(speechPermissionItem!)
+
+        accessibilityPermissionItem = NSMenuItem(title: "  Accessibility: Checking…", action: nil, keyEquivalent: "")
+        accessibilityPermissionItem?.isEnabled = false
+        menu.addItem(accessibilityPermissionItem!)
+
+        settingsItem = NSMenuItem(title: "Open System Settings…", action: #selector(openSystemSettings), keyEquivalent: "")
+        settingsItem?.target = self
+        menu.addItem(settingsItem!)
 
         menu.addItem(NSMenuItem.separator())
 
@@ -64,14 +79,20 @@ class StatusBarController {
     }
 
     func updatePermissionStatus(_ status: PermissionStatus) {
+        micPermissionItem?.title = "  \(status.microphone ? "✓" : "✗") Microphone"
+        speechPermissionItem?.title = "  \(status.speechRecognition ? "✓" : "✗") Speech Recognition"
+        accessibilityPermissionItem?.title = "  \(status.accessibility ? "✓" : "✗") Accessibility"
+
         if status.allGranted {
-            permissionMenuItem?.title = "Permissions: All Granted"
+            settingsItem?.isHidden = true
         } else {
-            var missing: [String] = []
-            if !status.microphone { missing.append("Mic") }
-            if !status.speechRecognition { missing.append("Speech") }
-            if !status.accessibility { missing.append("Accessibility") }
-            permissionMenuItem?.title = "Missing: \(missing.joined(separator: ", "))"
+            settingsItem?.isHidden = false
+        }
+    }
+
+    @objc private func openSystemSettings() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
+            NSWorkspace.shared.open(url)
         }
     }
 

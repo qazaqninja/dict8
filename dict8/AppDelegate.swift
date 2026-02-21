@@ -22,21 +22,26 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             NSApplication.shared.terminate(nil)
         }
 
-        checkPermissionsAndStart()
-    }
-
-    private func checkPermissionsAndStart() {
-        permissionManager.requestAllPermissions { [weak self] status in
-            DispatchQueue.main.async {
-                guard let self = self else { return }
-                self.statusBarController.updatePermissionStatus(status)
-
-                if status.allGranted {
-                    self.startHotkeyListener()
-                } else {
-                    self.showPermissionAlert(status)
-                }
+        permissionManager.onStatusChanged = { [weak self] status in
+            guard let self = self else { return }
+            self.statusBarController.updatePermissionStatus(status)
+            if status.allGranted {
+                self.permissionManager.stopMonitoring()
+                self.startHotkeyListener()
             }
+        }
+
+        // Trigger system permission dialogs sequentially
+        permissionManager.requestAllPermissions()
+
+        // Show current status and start polling for changes
+        let initialStatus = permissionManager.checkCurrentStatus()
+        statusBarController.updatePermissionStatus(initialStatus)
+
+        if initialStatus.allGranted {
+            startHotkeyListener()
+        } else {
+            permissionManager.startMonitoring()
         }
     }
 
@@ -91,37 +96,4 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func showPermissionAlert(_ status: PermissionStatus) {
-        let alert = NSAlert()
-        alert.messageText = "dict8 Needs Permissions"
-        alert.alertStyle = .warning
-
-        var missing: [String] = []
-        if !status.microphone { missing.append("Microphone") }
-        if !status.speechRecognition { missing.append("Speech Recognition") }
-        if !status.accessibility { missing.append("Accessibility") }
-
-        alert.informativeText = """
-        The following permissions are required:
-        \(missing.map { "  - \($0)" }.joined(separator: "\n"))
-
-        Please grant these in System Settings > Privacy & Security.
-        """
-
-        alert.addButton(withTitle: "Open System Settings")
-        alert.addButton(withTitle: "Retry")
-        alert.addButton(withTitle: "Quit")
-
-        let response = alert.runModal()
-        switch response {
-        case .alertFirstButtonReturn:
-            if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy") {
-                NSWorkspace.shared.open(url)
-            }
-        case .alertSecondButtonReturn:
-            checkPermissionsAndStart()
-        default:
-            NSApplication.shared.terminate(nil)
-        }
-    }
 }

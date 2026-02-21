@@ -13,31 +13,50 @@ struct PermissionStatus {
 }
 
 class PermissionManager {
+    var onStatusChanged: ((PermissionStatus) -> Void)?
 
-    func requestAllPermissions(completion: @escaping (PermissionStatus) -> Void) {
+    private var pollingTimer: Timer?
+    private var lastStatus = PermissionStatus()
+
+    /// Returns the current permission status without triggering any prompts.
+    func checkCurrentStatus() -> PermissionStatus {
         var status = PermissionStatus()
-        let group = DispatchGroup()
+        status.microphone = AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
+        status.speechRecognition = SFSpeechRecognizer.authorizationStatus() == .authorized
+        status.accessibility = AXIsProcessTrusted()
+        return status
+    }
 
-        // Microphone
-        group.enter()
-        requestMicrophoneAccess { granted in
-            status.microphone = granted
-            group.leave()
+    /// Triggers system permission dialogs sequentially: Mic → Speech → Accessibility.
+    func requestAllPermissions() {
+        requestMicrophoneAccess { [weak self] _ in
+            self?.requestSpeechRecognition { [weak self] _ in
+                DispatchQueue.main.async {
+                    self?.promptAccessibility()
+                }
+            }
         }
+    }
 
-        // Speech Recognition
-        group.enter()
-        requestSpeechRecognition { granted in
-            status.speechRecognition = granted
-            group.leave()
+    /// Starts a 2-second polling timer that fires `onStatusChanged` when any permission changes.
+    func startMonitoring() {
+        lastStatus = checkCurrentStatus()
+        pollingTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
+            guard let self = self else { return }
+            let current = self.checkCurrentStatus()
+            if current.microphone != self.lastStatus.microphone ||
+               current.speechRecognition != self.lastStatus.speechRecognition ||
+               current.accessibility != self.lastStatus.accessibility {
+                self.lastStatus = current
+                self.onStatusChanged?(current)
+            }
         }
+    }
 
-        // Accessibility (synchronous check)
-        status.accessibility = checkAccessibility()
-
-        group.notify(queue: .main) {
-            completion(status)
-        }
+    /// Stops the polling timer.
+    func stopMonitoring() {
+        pollingTimer?.invalidate()
+        pollingTimer = nil
     }
 
     private func requestMicrophoneAccess(completion: @escaping (Bool) -> Void) {
@@ -66,8 +85,8 @@ class PermissionManager {
         }
     }
 
-    private func checkAccessibility() -> Bool {
+    private func promptAccessibility() {
         let options = [kAXTrustedCheckOptionPrompt.takeRetainedValue(): true] as CFDictionary
-        return AXIsProcessTrustedWithOptions(options)
+        _ = AXIsProcessTrustedWithOptions(options)
     }
 }
